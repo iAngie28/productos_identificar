@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#153e35">
+  <title>Inventario inteligente | Clasificador de productos</title>
+  <link rel="icon" href="data:,">
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0/dist/tf.min.js"></script>
+  <style>
+    :root{--ink:#162a25;--muted:#64736e;--line:#dce6e0;--brand:#176b50;--brand-dark:#104a38;--bg:#f3f7f4;--card:#fff;--warn:#8a5a0a;--warn-bg:#fff6df;--good:#176b50;--bad:#b42318}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{background:linear-gradient(125deg,var(--brand-dark),#22845e);color:#fff;padding:26px 18px 30px}
+    .header-inner,main{width:min(1100px,calc(100% - 28px));margin:auto}
+    .eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:.75rem;font-weight:800;opacity:.8}
+    h1{margin:8px 0;font-size:clamp(1.8rem,4vw,2.7rem);letter-spacing:-.04em}
+    header p{max-width:760px;margin:0;color:#e0f2e8;line-height:1.55}
+    main{padding:24px 0 38px}
+    .statusline{display:flex;align-items:center;gap:9px;margin:0 0 16px;color:var(--muted);font-size:.93rem}
+    .dot{width:10px;height:10px;border-radius:50%;background:#d49a21;flex:none}
+    .dot.ok{background:#20845b}.dot.error{background:var(--bad)}
+    .layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(320px,.9fr);gap:18px;align-items:start}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 8px 26px #153e3509}
+    .card-head{padding:18px 20px 12px;border-bottom:1px solid #edf1ee}
+    .card-head h2{font-size:1.08rem;margin:0 0 5px}.card-head p{margin:0;color:var(--muted);font-size:.9rem;line-height:1.5}
+    .card-body{padding:18px 20px 20px}
+    .camera-frame{position:relative;background:#0a1712;border-radius:13px;overflow:hidden;aspect-ratio:4/3;display:grid;place-items:center}
+    video{width:100%;height:100%;object-fit:contain;display:block}
+    .camera-placeholder{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#e1eee7;padding:20px;pointer-events:none}
+    .camera-placeholder strong{font-size:1.05rem}.camera-placeholder span{font-size:.86rem;opacity:.8;margin-top:7px}
+    .controls{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+    button{border:0;border-radius:10px;padding:11px 14px;font:inherit;font-size:.92rem;font-weight:750;cursor:pointer;transition:filter .15s,transform .15s}
+    button:hover:not(:disabled){filter:brightness(.96)}button:active:not(:disabled){transform:translateY(1px)}button:disabled{opacity:.45;cursor:not-allowed}
+    .primary{background:var(--brand);color:#fff}.secondary{background:#eaf2ed;color:var(--brand-dark)}.outline{background:#fff;color:var(--ink);border:1px solid var(--line)}.danger{background:#fff0ef;color:var(--bad)}
+    .recognition{background:#f6faf7;border:1px solid var(--line);border-radius:13px;padding:16px;margin-bottom:13px}
+    .recognition small{display:block;color:var(--muted);font-size:.82rem;margin-bottom:6px}
+    #best{font-size:1.45rem;font-weight:850;overflow-wrap:anywhere;margin:0 0 8px}
+    #confidence{font-size:.9rem;color:var(--muted);margin:0;line-height:1.45}
+    .hint{background:var(--warn-bg);border-radius:10px;padding:11px 12px;color:var(--warn);font-size:.87rem;line-height:1.45;margin-top:12px}
+    .hint.good{background:#e9f6ef;color:var(--good)}
+    .inventory{margin-top:18px}
+    .inventory-header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .inventory-header h2{margin:0;font-size:1.2rem}.inventory-header p{color:var(--muted);font-size:.88rem;margin:5px 0 0}
+    .total{white-space:nowrap;background:#e7f3eb;color:var(--brand-dark);border-radius:12px;padding:10px 13px;font-weight:850}
+    .table-wrap{overflow-x:auto}
+    table{border-collapse:collapse;width:100%;min-width:350px}
+    th,td{text-align:left;padding:13px 14px;border-bottom:1px solid #edf1ee}
+    th{font-size:.76rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);background:#f8faf8}
+    td{font-size:.94rem}td.count{text-align:center;font-size:1.12rem;font-weight:850;font-variant-numeric:tabular-nums}
+    .qty-controls{display:flex;justify-content:flex-end;gap:7px}
+    .qty-button{padding:6px 10px;border-radius:8px;min-width:34px;background:#eef3ef;color:var(--ink)}
+    .empty{text-align:center;padding:24px;color:var(--muted)}
+    .foot{color:var(--muted);font-size:.82rem;line-height:1.55;margin-top:14px}
+    .notice{border-left:4px solid #d49a21;padding:12px 14px;background:#fff9e9;color:#634b16;border-radius:0 10px 10px 0;margin-top:18px;line-height:1.5;font-size:.9rem}
+    @media(max-width:780px){.layout{grid-template-columns:1fr}.card-body{padding:15px}.card-head{padding:16px}.inventory-header{align-items:flex-start;flex-direction:column}.total{white-space:normal}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">Proyecto de inteligencia artificial</div>
+    <h1>Inventario inteligente de productos</h1>
+    <p>Apunta la cámara a un producto. La identificación se actualiza en tiempo real y puedes confirmar cada unidad para actualizar el inventario.</p>
+  </div>
+</header>
+<main>
+  <p class="statusline"><span id="statusDot" class="dot"></span><span id="status">Cargando el modelo y las categorías…</span></p>
+  <div class="layout">
+    <section class="card">
+      <div class="card-head"><h2>1. Identificación en tiempo real</h2><p>Coloca un solo producto dentro del encuadre. La predicción se estabiliza usando varios fotogramas.</p></div>
+      <div class="card-body">
+        <div class="camera-frame">
+          <video id="video" playsinline autoplay muted></video>
+          <div id="cameraPlaceholder" class="camera-placeholder"><strong>La cámara está apagada</strong><span>Presiona “Encender cámara” para comenzar.</span></div>
+        </div>
+        <div class="controls">
+          <button id="startCamera" class="primary">Encender cámara</button>
+          <button id="switchCamera" class="secondary" disabled>Cambiar cámara</button>
+          <button id="toggleDetection" class="outline" disabled>Pausar identificación</button>
+        </div>
+        <p class="foot">La cámara analiza varios fotogramas por segundo. Para un resultado estable, mantén el producto visible y evita movimientos rápidos. La página necesita HTTPS o localhost.</p>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>2. Resultado en vivo</h2><p>Se muestran la categoría más probable y su confianza estimada. Verifica el resultado antes de registrar.</p></div>
+      <div class="card-body">
+        <div class="recognition" aria-live="polite">
+          <small>Producto identificado</small>
+          <p id="best">Esperando el modelo…</p>
+          <p id="confidence">Cuando el modelo esté listo, enciende la cámara para iniciar la identificación en tiempo real.</p>
+        </div>
+        <button id="register" class="primary" style="width:100%" disabled>Registrar 1 unidad en inventario</button>
+        <button id="nextProduct" class="secondary" style="width:100%;margin-top:9px" disabled>Preparar siguiente producto</button>
+        <div id="registerHint" class="hint">La cámara no suma unidades automáticamente. Confirma cada producto para no contar la misma unidad en todos los fotogramas.</div>
+      </div>
+    </section>
+  </div>
+
+  <section class="card inventory">
+    <div class="card-body">
+      <div class="inventory-header">
+        <div><h2>Inventario actual</h2><p>Las cantidades quedan guardadas en este navegador.</p></div>
+        <div class="total">Total de unidades: <span id="totalCount">0</span></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Producto</th><th style="text-align:center">Cantidad</th><th style="text-align:right">Ajuste manual</th></tr></thead>
+          <tbody id="inventoryRows"><tr><td colspan="3" class="empty">Esperando las etiquetas del modelo…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="controls">
+        <button id="exportCsv" class="secondary" disabled>Descargar inventario CSV</button>
+        <button id="clearInventory" class="danger" disabled>Vaciar inventario</button>
+      </div>
+      <p class="foot">El inventario se guarda localmente en este navegador; no se sincroniza con otros celulares ni con una base de datos compartida.</p>
+    </div>
+  </section>
+
+  <div class="notice"><strong>Importante:</strong> identificación en tiempo real significa que el modelo clasifica continuamente el producto que ocupa la cámara. Este clasificador no localiza ni cuenta automáticamente muchos objetos en un estante. Para eso se necesita un modelo de detección de objetos y datos anotados con cajas.</div>
+</main>
+<script>
+(() => {
+  'use strict';
+  const MODEL_URL = './productos_modelo_tfjs/model.json';
+  const LABELS_URL = './etiquetas.json';
+  const TYPE_URL = './tipo_modelo.json';
+  const STORAGE_KEY = 'inventario-inteligente-productos-v1';
+  // Ajustes de respuesta: menos fotogramas para estabilizar y umbral algo más prudente.
+  const MIN_CONFIDENCE = 0.62;
+  const FRAME_DELAY_MS = 140;
+  const HISTORY_SIZE = 3;
+  const STABLE_VOTES = 2;
+
+  const $ = id => document.getElementById(id);
+  const video = $('video');
+  // Se reduce cada fotograma a 160x160 antes de convertirlo en tensor.
+  // El tamaño coincide con la entrada usada durante el entrenamiento.
+  const inferenceCanvas = document.createElement('canvas');
+  inferenceCanvas.width = 160;
+  inferenceCanvas.height = 160;
+  const inferenceContext = inferenceCanvas.getContext('2d', { alpha: false });
+  const statusEl = $('status');
+  const statusDot = $('statusDot');
+  const placeholder = $('cameraPlaceholder');
+  const bestEl = $('best');
+  const confidenceEl = $('confidence');
+  const registerBtn = $('register');
+  const nextProductBtn = $('nextProduct');
+  const registerHint = $('registerHint');
+  const inventoryRows = $('inventoryRows');
+  const totalCount = $('totalCount');
+  const startBtn = $('startCamera');
+  const switchBtn = $('switchCamera');
+  const toggleBtn = $('toggleDetection');
+
+  let model = null;
+  let labels = [];
+  let modelType = 'layers';
+  let stream = null;
+  let facingMode = 'environment';
+  let currentProduct = null;
+  let currentScore = 0;
+  let inventory = {};
+  let inferenceBusy = false;
+  let realtimeEnabled = false;
+  let loopTimer = null;
+  let scoreHistory = [];
+  let awaitingNextProduct = false;
+  let lastStableLabel = null;
+
+  function setStatus(message, state = '') {
+    statusEl.textContent = message;
+    statusDot.className = 'dot' + (state ? ' ' + state : '');
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+
+  async function loadModel() {
+    setStatus('Cargando el modelo y las etiquetas…');
+    if (typeof tf === 'undefined') throw new Error('No se pudo cargar TensorFlow.js. Comprueba tu conexión a internet.');
+
+    // Prioriza WebGL cuando el navegador lo soporta; si no, usa CPU.
+    try {
+      const backendSet = await tf.setBackend('webgl');
+      if (!backendSet) await tf.setBackend('cpu');
+    } catch (_) {
+      await tf.setBackend('cpu');
+    }
+    await tf.ready();
+
+    const labelsResponse = await fetch(LABELS_URL);
+    if (!labelsResponse.ok) throw new Error('No se pudo cargar etiquetas.json. Debe estar junto a index.html.');
+    const loadedLabels = await labelsResponse.json();
+    if (!Array.isArray(loadedLabels) || loadedLabels.length === 0) {
+      throw new Error('etiquetas.json debe contener una lista de categorías.');
+    }
+
+    try {
+      const typeResponse = await fetch(TYPE_URL);
+      if (typeResponse.ok) {
+        const typeData = await typeResponse.json();
+        if (typeData && (typeData.tipo === 'layers' || typeData.tipo === 'graph')) modelType = typeData.tipo;
+      }
+    } catch (_) { /* Se prueba LayersModel si no hay metadatos. */ }
+
+    model = modelType === 'graph'
+      ? await tf.loadGraphModel(MODEL_URL)
+      : await tf.loadLayersModel(MODEL_URL);
+    labels = loadedLabels;
+
+    // Calienta el modelo una sola vez para que la primera predicción real
+    // no cargue con todo el coste de inicialización del motor.
+    setStatus(`Preparando modelo en ${tf.getBackend()}…`);
+    tf.tidy(() => {
+      const warmupInput = tf.zeros([1, 160, 160, 3]);
+      if (modelType === 'graph') model.execute(warmupInput);
+      else model.predict(warmupInput);
+    });
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {}; } catch (_) { saved = {}; }
+    inventory = {};
+    labels.forEach(label => {
+      const amount = Number(saved[label]);
+      inventory[label] = Number.isFinite(amount) && amount >= 0 ? Math.floor(amount) : 0;
+    });
+    renderInventory();
+    $('exportCsv').disabled = false;
+    $('clearInventory').disabled = false;
+    setStatus(`Modelo listo · ${labels.length} categorías · ${tf.getBackend()} · ${modelType === 'graph' ? 'GraphModel' : 'LayersModel'}`, 'ok');
+    bestEl.textContent = 'Esperando cámara';
+    confidenceEl.textContent = 'Enciende la cámara para iniciar la identificación en tiempo real.';
+  }
+
+  async function startCamera() {
+    if (!model) throw new Error('El modelo aún no está listo. Espera a que aparezca “Modelo listo”.');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Este navegador no permite acceder a la cámara. Prueba con Chrome y una dirección HTTPS.');
+    }
+    stopCamera();
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: facingMode }, width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+    placeholder.style.display = 'none';
+    startBtn.textContent = 'Reiniciar cámara';
+    switchBtn.disabled = false;
+    toggleBtn.disabled = false;
+    realtimeEnabled = true;
+    toggleBtn.textContent = 'Pausar identificación';
+    scoreHistory = [];
+    setStatus('Cámara activa · identificando en tiempo real', 'ok');
+    liveDetectionLoop();
+  }
+
+  function stopCamera() {
+    realtimeEnabled = false;
+    if (loopTimer !== null) clearTimeout(loopTimer);
+    loopTimer = null;
+    if (stream) stream.getTracks().forEach(track => track.stop());
+    stream = null;
+    video.srcObject = null;
+    placeholder.style.display = 'grid';
+    switchBtn.disabled = true;
+    toggleBtn.disabled = true;
+    toggleBtn.textContent = 'Pausar identificación';
+    startBtn.textContent = 'Encender cámara';
+    registerBtn.disabled = true;
+  }
+
+  async function switchCamera() {
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    await startCamera();
+  }
+
+  function getOutputTensor(output) {
+    if (output instanceof tf.Tensor) return output;
+    if (Array.isArray(output)) {
+      const tensor = output.find(item => item instanceof tf.Tensor);
+      if (tensor) return tensor;
+    }
+    if (output && typeof output === 'object') {
+      const tensor = Object.values(output).find(item => item instanceof tf.Tensor);
+      if (tensor) return tensor;
+    }
+    throw new Error('El modelo no devolvió un tensor de predicciones compatible.');
+  }
+
+  async function inferCurrentFrame() {
+    if (!model || !stream || video.readyState < 2 || !video.videoWidth) return;
+    if (inferenceBusy) return;
+    inferenceBusy = true;
+    let inputTensor = null;
+    let rawOutput = null;
+    let outputTensor = null;
+    try {
+      // El modelo se entrenó con entrada RGB 160x160 en escala 0..255;
+      // la normalización ya está incluida en la arquitectura exportada.
+      inferenceContext.drawImage(video, 0, 0, 160, 160);
+      inputTensor = tf.tidy(() => tf.browser.fromPixels(inferenceCanvas)
+        .toFloat()
+        .expandDims(0));
+      rawOutput = modelType === 'graph'
+        ? model.execute(inputTensor)
+        : model.predict(inputTensor);
+      outputTensor = getOutputTensor(rawOutput);
+      const scores = Array.from(await outputTensor.data());
+      if (scores.length !== labels.length) {
+        throw new Error(`El modelo produjo ${scores.length} salidas, pero etiquetas.json contiene ${labels.length} categorías.`);
+      }
+      processScores(scores);
+    } catch (error) {
+      console.error('Error durante la identificación en vivo:', error);
+      setStatus('Error al analizar la imagen · revisa la consola', 'error');
+      bestEl.textContent = 'No se pudo clasificar';
+      confidenceEl.textContent = error.message || 'Comprueba que modelo y etiquetas pertenezcan al mismo entrenamiento.';
+      currentProduct = null;
+      registerBtn.disabled = true;
+    } finally {
+      if (inputTensor) inputTensor.dispose();
+      if (rawOutput instanceof tf.Tensor) rawOutput.dispose();
+      else if (Array.isArray(rawOutput)) rawOutput.forEach(t => { if (t instanceof tf.Tensor) t.dispose(); });
+      else if (rawOutput && typeof rawOutput === 'object') Object.values(rawOutput).forEach(t => { if (t instanceof tf.Tensor) t.dispose(); });
+      inferenceBusy = false;
+    }
+  }
+
+  function processScores(scores) {
+    scoreHistory.push(scores);
+    if (scoreHistory.length > HISTORY_SIZE) scoreHistory.shift();
+    const averaged = labels.map((_, i) => scoreHistory.reduce((sum, row) => sum + row[i], 0) / scoreHistory.length);
+    const ranked = averaged.map((score, index) => ({ label: labels[index], score, index })).sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    const recentWinners = scoreHistory.slice(-3).map(row => {
+      let winner = 0;
+      for (let i = 1; i < row.length; i++) if (row[i] > row[winner]) winner = i;
+      return winner;
+    });
+    const votes = recentWinners.filter(index => index === best.index).length;
+    const isStable = scoreHistory.length >= 3 && votes >= STABLE_VOTES && best.score >= MIN_CONFIDENCE;
+
+    if (!isStable) {
+      currentProduct = null;
+      currentScore = best.score;
+      registerBtn.disabled = true;
+      bestEl.textContent = 'Detectando producto…';
+      const alternatives = ranked.slice(1, 3)
+        .map(item => `${item.label} ${(item.score * 100).toFixed(0)}%`)
+        .join(' · ');
+      confidenceEl.textContent = `Candidato: ${best.label} (${(best.score * 100).toFixed(1)}%). ${alternatives ? `Otras opciones: ${alternatives}. ` : ''}Esperando una predicción estable.`;
+      if (!awaitingNextProduct) {
+        registerHint.className = 'hint';
+        registerHint.textContent = best.score < MIN_CONFIDENCE
+          ? 'Confianza baja. Acerca el producto, mejora la iluminación y muestra otra cara del envase.'
+          : 'La cámara está comparando varios fotogramas para reducir cambios bruscos de categoría.';
+      }
+      setStatus('Identificando en tiempo real…');
+      return;
+    }
+
+    currentProduct = best.label;
+    currentScore = best.score;
+    lastStableLabel = best.label;
+    bestEl.textContent = best.label;
+    confidenceEl.textContent = `Confianza estimada: ${(best.score * 100).toFixed(1)}%. La predicción está estabilizada con varios fotogramas.`;
+    registerBtn.disabled = awaitingNextProduct;
+    if (awaitingNextProduct) {
+      nextProductBtn.disabled = false;
+      registerHint.className = 'hint good';
+      registerHint.textContent = `Ya registraste una unidad. Retira ese producto y coloca el siguiente; después pulsa “Preparar siguiente producto”.`;
+    } else {
+      registerHint.className = best.score < 0.7 ? 'hint' : 'hint good';
+      registerHint.textContent = `Detectado: ${best.label}. Comprueba visualmente la categoría y pulsa para registrar una sola unidad.`;
+    }
+    setStatus('Identificación en tiempo real activa', 'ok');
+  }
+
+  async function liveDetectionLoop() {
+    if (!realtimeEnabled || !stream) return;
+    await inferCurrentFrame();
+    if (realtimeEnabled && stream) {
+      loopTimer = setTimeout(liveDetectionLoop, FRAME_DELAY_MS);
+    }
+  }
+
+  function saveInventory() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(inventory));
+  }
+
+  function renderInventory() {
+    const total = labels.reduce((sum, label) => sum + (inventory[label] || 0), 0);
+    totalCount.textContent = String(total);
+    if (!labels.length) {
+      inventoryRows.innerHTML = '<tr><td colspan="3" class="empty">No hay categorías para mostrar.</td></tr>';
+      return;
+    }
+    inventoryRows.innerHTML = labels.map((label, index) => `
+      <tr>
+        <td>${escapeHtml(label)}</td>
+        <td class="count">${inventory[label] || 0}</td>
+        <td><div class="qty-controls">
+          <button class="qty-button" type="button" data-action="minus" data-index="${index}" aria-label="Restar una unidad de ${escapeHtml(label)}">−</button>
+          <button class="qty-button" type="button" data-action="plus" data-index="${index}" aria-label="Sumar una unidad de ${escapeHtml(label)}">+</button>
+        </div></td>
+      </tr>`).join('');
+  }
+
+  function adjustInventory(label, delta) {
+    if (!Object.prototype.hasOwnProperty.call(inventory, label)) return;
+    inventory[label] = Math.max(0, (inventory[label] || 0) + delta);
+    saveInventory();
+    renderInventory();
+  }
+
+  registerBtn.addEventListener('click', () => {
+    if (!currentProduct || awaitingNextProduct) return;
+    adjustInventory(currentProduct, 1);
+    awaitingNextProduct = true;
+    registerBtn.disabled = true;
+    nextProductBtn.disabled = false;
+    registerHint.className = 'hint good';
+    registerHint.textContent = `Unidad registrada: ${currentProduct}. Retira el producto y pulsa “Preparar siguiente producto” antes de contar otra unidad.`;
+    setStatus(`Inventario actualizado: ${currentProduct} +1`, 'ok');
+  });
+
+  nextProductBtn.addEventListener('click', () => {
+    awaitingNextProduct = false;
+    currentProduct = null;
+    currentScore = 0;
+    lastStableLabel = null;
+    scoreHistory = [];
+    registerBtn.disabled = true;
+    nextProductBtn.disabled = true;
+    bestEl.textContent = 'Buscando el siguiente producto…';
+    confidenceEl.textContent = 'Retira el producto anterior y coloca el siguiente dentro del encuadre.';
+    registerHint.className = 'hint';
+    registerHint.textContent = 'Esperando una nueva predicción estable antes de permitir el registro.';
+  });
+
+  inventoryRows.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const label = labels[Number(button.dataset.index)];
+    if (!label) return;
+    adjustInventory(label, button.dataset.action === 'plus' ? 1 : -1);
+  });
+
+  startBtn.addEventListener('click', async () => {
+    try { await startCamera(); }
+    catch (error) {
+      console.error(error);
+      setStatus(error.message || 'No se pudo activar la cámara.', 'error');
+      bestEl.textContent = 'No se pudo activar la cámara';
+      confidenceEl.textContent = error.message || 'Comprueba los permisos del navegador.';
+    }
+  });
+
+  switchBtn.addEventListener('click', async () => {
+    try { await switchCamera(); }
+    catch (error) {
+      console.error(error);
+      setStatus(error.message || 'No se pudo cambiar la cámara.', 'error');
+    }
+  });
+
+  toggleBtn.addEventListener('click', () => {
+    if (!stream) return;
+    if (realtimeEnabled) {
+      realtimeEnabled = false;
+      if (loopTimer !== null) clearTimeout(loopTimer);
+      loopTimer = null;
+      toggleBtn.textContent = 'Reanudar identificación';
+      setStatus('Identificación pausada');
+    } else {
+      realtimeEnabled = true;
+      scoreHistory = [];
+      toggleBtn.textContent = 'Pausar identificación';
+      setStatus('Identificación en tiempo real activa', 'ok');
+      liveDetectionLoop();
+    }
+  });
+
+  $('clearInventory').addEventListener('click', () => {
+    if (!confirm('¿Seguro que quieres poner todas las cantidades en cero?')) return;
+    labels.forEach(label => inventory[label] = 0);
+    saveInventory();
+    renderInventory();
+    setStatus('Inventario vaciado', 'ok');
+  });
+
+  $('exportCsv').addEventListener('click', () => {
+    const rows = [['Producto', 'Cantidad'], ...labels.map(label => [label, inventory[label] || 0])];
+    const csv = '\ufeff' + rows.map(row => row.map(value => '"' + String(value).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'inventario_productos.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  window.addEventListener('beforeunload', stopCamera);
+  loadModel().catch(error => {
+    console.error(error);
+    setStatus(error.message || 'No se pudo cargar el modelo.', 'error');
+    bestEl.textContent = 'No se pudo iniciar el clasificador';
+    confidenceEl.textContent = error.message || 'Revisa la estructura de archivos y la consola del navegador.';
+  });
+})();
+</script>
+</body>
+</html>
